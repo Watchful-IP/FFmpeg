@@ -101,6 +101,12 @@ void ff_http_auth_handle_header(HTTPAuthState *state, const char *key,
                                state);
         } else if (av_stristart(value, "Digest ", &p) &&
                    state->auth_type <= HTTP_AUTH_DIGEST) {
+            DigestParams prev = state->digest_params;
+            char prev_realm[sizeof(state->realm)];
+            int had_digest = state->auth_type == HTTP_AUTH_DIGEST;
+            if (had_digest)
+                memcpy(prev_realm, state->realm, sizeof(prev_realm));
+
             state->auth_type = HTTP_AUTH_DIGEST;
             memset(&state->digest_params, 0, sizeof(DigestParams));
             state->realm[0] = 0;
@@ -111,6 +117,15 @@ void ff_http_auth_handle_header(HTTPAuthState *state, const char *key,
                        sizeof(state->digest_params.qop));
             if (!av_strcasecmp(state->digest_params.stale, "true"))
                 state->stale = 1;
+
+            /* Unsupported algorithm, keep previous supported digest params. */
+            if (had_digest &&
+                state->digest_params.algorithm[0] &&
+                av_strcasecmp(state->digest_params.algorithm, "MD5") &&
+                av_strcasecmp(state->digest_params.algorithm, "MD5-sess")) {
+                state->digest_params = prev;
+                memcpy(state->realm, prev_realm, sizeof(state->realm));
+            }
         }
     } else if (!av_strcasecmp(key, "Authentication-Info")) {
         ff_parse_key_value(value, (ff_parse_key_val_cb) handle_digest_update,
